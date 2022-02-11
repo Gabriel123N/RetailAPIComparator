@@ -1,0 +1,114 @@
+﻿@inject GlobalService globalService
+<MudGrid>
+    <MudItem xs="6" md="4">
+        <MudSelect T="string" @bind-Value="selectedFamily" FullWidth="false">
+        @foreach (var key in globalService.VMSkuFamilies.Select(f => f.Key))
+        {
+            <MudSelectItem Value="@key">@key Family</MudSelectItem>
+        }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="6" md="4">
+        <MudSelect T="string" @bind-Value="selectedRegion" FullWidth="false">
+            @foreach (var region in globalService.Regions)
+            {
+                <MudSelectItem Value="@region.Location" FullWidth="false">@region.DisplayName</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="6" md="4">
+        <MudSelect T="string" Disabled="@(string.IsNullOrEmpty(selectedFamily) ? true : false)" @bind-Value="@selectedSKU">
+            @if(!string.IsNullOrEmpty(selectedFamily))
+            {
+                @foreach (var sku in globalService.VMSkuFamilies.Where(f => f.Key == selectedFamily).First())
+                {
+                    <MudSelectItem Value="@sku">@sku</MudSelectItem>
+                }
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12">
+        <MudButton Disabled="@(string.IsNullOrEmpty(selectedFamily) || string.IsNullOrEmpty(selectedRegion) || 
+        string.IsNullOrEmpty(selectedSKU))" Variant="Variant.Filled" Color="Color.Info"
+        OnClick="@(async () => await GetItems())">Compare</MudButton>
+    </MudItem>
+</MudGrid>
+<MudSimpleTable Dense="true">
+    <thead>
+        <tr>
+            <th>Pay as you Go - Retail</th>
+            <th>1 Year reservation</th>
+            <th>3 Years reservation</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if(PayAsYouGoItem is null || Year1ReservationItem is null || Year3ReservationItem is null)
+        {
+            <tr> <td><MudText>No data</MudText></td></tr>
+        }
+        else 
+        {
+            @for (int i = 1; i < 37; i++)
+            {
+                double[] prices = {PayAsYouGoItem.retailPrice*i*732, (Year1ReservationItem.retailPrice/12)*i, (Year3ReservationItem.retailPrice/36)*i};
+                double[] sortedPrices = {PayAsYouGoItem.retailPrice*i*732, (Year1ReservationItem.retailPrice/12)*i, (Year3ReservationItem.retailPrice/36)*i};
+                Array.Sort(sortedPrices);
+                <tr>
+                    <td>
+                        <MudText Color="GetColor(sortedPrices, prices[0])">@prices[0]</MudText>
+                    </td>
+                    <td>
+                        <MudText Color="GetColor(sortedPrices, prices[1])">@prices[1]</MudText>
+                    </td>
+                    <td>
+                        <MudText Color="GetColor(sortedPrices, prices[2])">@prices[2]</MudText>
+                    </td>
+                </tr>
+            }
+        }
+    </tbody>
+</MudSimpleTable>
+
+@code {
+    string selectedFamily;
+    string selectedRegion;
+    string selectedSKU;
+    Item PayAsYouGoItem = new();
+    Item Year1ReservationItem = new();
+    Item Year3ReservationItem = new();
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+    }
+    private async Task GetItems()
+    {
+        using var client = new HttpClient();
+        var url = $"https://prices.azure.com/api/retail/prices?currencyCode='EUR'&$filter=armSkuName eq '{selectedSKU}' and armRegionName eq '{selectedRegion}' and serviceFamily eq 'Compute'";
+        var SelectedFamilyItems = await client.GetFromJsonAsync<RetailAPIResponse>(url);
+        var CleanedFamilyItems = SelectedFamilyItems.Items.Where(f => !f.meterName.Contains("low priority", StringComparison.OrdinalIgnoreCase) 
+        && !f.meterName.Contains("spot", StringComparison.OrdinalIgnoreCase)
+        && !f.productName.Contains("cloud", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var GroupedCleanedFamilyItems = CleanedFamilyItems.GroupBy(i => i.type).ToArray();
+        List<Item> FinalItemList = new();
+        foreach(var item in GroupedCleanedFamilyItems)
+        {
+            var groupedItem = item.GroupBy(i => i.effectiveStartDate).ToArray()[0].ToArray();
+            FinalItemList.AddRange(groupedItem);
+        }
+        var GroupedFinalItemList = FinalItemList.Where(i => !i.productName.Contains("windows", StringComparison.OrdinalIgnoreCase) 
+        && (i.type == "Consumption" || i.type == "Reservation")).ToArray().GroupBy(i => i.reservationTerm).ToArray();
+        PayAsYouGoItem = GroupedFinalItemList.Where(i => i.Key == "None").Select(i => i.First()).FirstOrDefault();
+        Year1ReservationItem = GroupedFinalItemList.Where(i => i.Key == "1 Year").Select(i => i.First()).FirstOrDefault();
+        Year3ReservationItem = GroupedFinalItemList.Where(i => i.Key == "3 Years").Select(i => i.First()).FirstOrDefault();
+    }
+    private Color GetColor(double[] sortedPrices, double price)
+    {
+        switch(Array.IndexOf(sortedPrices, price))
+        {
+            case 0: return Color.Success;
+            case 1: return Color.Warning;
+            case 2: return Color.Error;
+            default: return Color.Dark;
+        }
+    }
+}
