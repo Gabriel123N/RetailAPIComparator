@@ -36,6 +36,7 @@
 <MudSimpleTable Dense="true">
     <thead>
         <tr>
+            <th> Month </th>
             <th>Pay as you Go - Retail</th>
             <th>1 Year reservation</th>
             <th>3 Years reservation</th>
@@ -54,6 +55,9 @@
                 double[] sortedPrices = {PayAsYouGoItem.retailPrice*i*732, (Year1ReservationItem.retailPrice/12)*i, (Year3ReservationItem.retailPrice/36)*i};
                 Array.Sort(sortedPrices);
                 <tr>
+                    <td>
+                        <MudText> @i </MudText>
+                    </td>
                     <td>
                         <MudText Color="GetColor(sortedPrices, prices[0])">@prices[0]€</MudText>
                     </td>
